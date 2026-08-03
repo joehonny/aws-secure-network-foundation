@@ -1,0 +1,81 @@
+name: Terraform checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Validate with Terraform ${{ matrix.terraform_version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform_version:
+          - 1.7.5
+          - 1.9.7
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ matrix.terraform_version }}
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Terraform without backend
+        run: terraform init -backend=false -lockfile=readonly -input=false
+
+      - name: Validate Terraform
+        run: terraform validate -no-color
+
+      - name: Run Terraform tests
+        run: terraform test -no-color
+
+      - name: Validate credential-free basic example
+        run: |
+          terraform -chdir=examples/basic init -backend=false -input=false
+          terraform -chdir=examples/basic validate -no-color
+
+      - name: Set up TFLint
+        if: matrix.terraform_version == '1.9.7'
+        uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
+        with:
+          tflint_version: v0.64.0
+          checksums: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
+
+      - name: Initialize TFLint
+        if: matrix.terraform_version == '1.9.7'
+        run: tflint --init --config="${{ github.workspace }}/.tflint.hcl"
+
+      - name: Run root and recursive TFLint
+        if: matrix.terraform_version == '1.9.7'
+        run: |
+          tflint --config="${{ github.workspace }}/.tflint.hcl" --format=compact
+          tflint --config="${{ github.workspace }}/.tflint.hcl" --format=compact --recursive
+
+      - name: Scan Terraform configuration with Trivy
+        if: matrix.terraform_version == '1.9.7'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          version: v0.72.0
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          hide-progress: true
+          skip-dirs: .terraform,.tools

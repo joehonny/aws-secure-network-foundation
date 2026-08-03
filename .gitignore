@@ -1,0 +1,10 @@
+.worktrees/
+.terraform/
+examples/**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+.tools/
+.superpowers/
